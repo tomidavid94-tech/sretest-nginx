@@ -1,0 +1,30 @@
+services:
+  app:
+    image: linux_tweet_app
+    build: .
+    container_name: linux_tweet_app
+    restart: unless-stopped
+    expose:
+      - "80"
+
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: tweet_proxy
+    restart: unless-stopped
+    volumes:
+      - ./data/nginx:/etc/nginx/conf.d
+      - ./data/certbot/conf:/etc/letsencrypt
+      - ./data/certbot/www:/var/www/certbot
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - app
+
+  certbot:
+    image: certbot/certbot
+    restart: unless-stopped
+    volumes:
+      - ./data/certbot/conf:/etc/letsencrypt
+      - ./data/certbot/www:/var/www/certbot
+    command: certonly --webroot -w /var/www/certbot -d sretest.ddns.net --non-interactive --agree-tos --register-unsafely-without-email

@@ -1,0 +1,11 @@
+- hosts: all
+  roles:
+    - common
+  tags:
+    - common
+
+- hosts: webservers
+  roles:
+    - webserver
+  tags:
+    - webserver

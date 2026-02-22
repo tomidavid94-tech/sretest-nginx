@@ -1,0 +1,126 @@
+- name: Clone linux_tweet_app repo
+  ansible.builtin.git:
+    repo: "{{ app_repo }}"
+    dest: "{{ app_path }}"
+    version: master
+
+- name: Build docker image from repository
+  community.docker.docker_image:
+    name: "{{ image_name }}"
+    build:
+      path: "{{ app_path }}"
+    push: false
+    source: build
+  when: not ansible_check_mode
+
+- name: Create data directory for nginx confing files
+  ansible.builtin.file:
+    path: /opt/linux_tweet_app/data/nginx
+    state: directory
+    mode: 0755
+
+- name: Create data directory for certificates
+  ansible.builtin.file:
+    path: /opt/linux_tweet_app/data/certbot/conf
+    state: directory
+    mode: 0755
+  
+- name: Create data directory for certbot certificate creation
+  ansible.builtin.file:
+    path: /opt/linux_tweet_app/data/certbot/www
+    state: directory
+    mode: 0755
+
+- name: Copy nginx app config for IP SSL validation
+  ansible.builtin.copy:
+    src: files/default.conf
+    dest: /opt/linux_tweet_app/data/nginx/
+    owner: root
+    group: root
+    mode: 0644
+
+- name: Copy docker-compose yaml
+  ansible.builtin.copy:
+    src: files/docker-compose.yml
+    dest: /opt/linux_tweet_app/
+    owner: root
+    group: root
+    mode: 0744
+
+- name: Generate self-signed localhost certificate for nginx start
+  ansible.builtin.shell: |
+    openssl req -x509 -out sretest.ddns.net.crt -keyout sretest.ddns.net.key \
+      -newkey rsa:2048 -nodes -sha256 \
+      -subj '/CN=sretest.ddns.net' \
+      -extensions EXT \
+      -config <(
+        printf "[dn]\nCN=sretest.ddns.net\n[req]\ndistinguished_name = dn\n[EXT]\nsubjectAltName=DNS:sretest.ddns.net\nkeyUsage=digitalSignature\nextendedKeyUsage=serverAuth"
+      )
+  args:
+    executable: /bin/bash
+    chdir: /opt/linux_tweet_app/data/certbot/conf/
+    creates: /opt/linux_tweet_app/data/certbot/conf/sretest.ddns.net.crt
+  when: not ansible_check_mode
+
+- name: Set restrictive permissions on private key
+  ansible.builtin.file:
+    path: /opt/linux_tweet_app/data/certbot/conf/sretest.ddns.net.key
+    mode: "0600"
+    owner: root
+    group: root
+  when: not ansible_check_mode
+
+- name: Fail early if docker-compose file is missing
+  ansible.builtin.stat:
+    path: "{{ compose_file }}"
+  register: compose_stat
+
+- name: Abort when compose file is not present
+  ansible.builtin.fail:
+    msg: "Compose file {{ compose_file }} not found on target!"
+  when: 
+    - not compose_stat.stat.exists
+    - not ansible_check_mode
+
+- name: Ensure docker service is running (systemd)
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: yes
+  when: not ansible_check_mode
+
+- name: Start services with docker compose
+  ansible.builtin.shell: >
+    docker compose -f "{{ compose_file }}" up -d
+  args:
+    executable: /bin/bash
+  when: not ansible_check_mode
+
+- name: Update nginx config to use Let's Encrypt certificate
+  ansible.builtin.replace:
+    path: /opt/linux_tweet_app/data/nginx/default.conf
+    regexp: 'ssl_certificate\s+.*;'
+    replace: 'ssl_certificate /etc/letsencrypt/live/sretest.ddns.net/fullchain.pem;'
+
+- name: Update nginx config to use Let's Encrypt private key
+  ansible.builtin.replace:
+    path: /opt/linux_tweet_app/data/nginx/default.conf
+    regexp: 'ssl_certificate_key\s+.*;'
+    replace: 'ssl_certificate_key /etc/letsencrypt/live/sretest.ddns.net/privkey.pem;'
+
+- name: Ensure fullchain exists on host and is non-empty
+  ansible.builtin.stat:
+    path: "/opt/linux_tweet_app/data/certbot/conf/live/sretest.ddns.net/fullchain.pem"
+  register: stat_fullchain
+
+- name: Fail early if fullchain missing or empty
+  ansible.builtin.fail:
+    msg: "fullchain.pem missing or empty - cannot proceed"
+  when: not stat_fullchain.stat.exists or stat_fullchain.stat.size == 0
+
+- name: Reload nginx inside docker compose
+  ansible.builtin.shell: >
+    docker compose -f /opt/linux_tweet_app/docker-compose.yml exec -T nginx nginx -s reload
+  args:
+    executable: /bin/bash
+    

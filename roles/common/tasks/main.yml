@@ -1,0 +1,5 @@
+- setup:
+  tags:
+    - always
+
+- import_tasks: install-software.yml

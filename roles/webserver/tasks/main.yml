@@ -1,0 +1,3 @@
+- import_tasks: install-software.yml
+
+- import_tasks: configure-application.yml
