@@ -62,10 +62,6 @@
     creates: /opt/linux_tweet_app/data/certbot/conf/sretest.ddns.net.crt
   when: not ansible_check_mode
 
-- name: Wait for nfs to sync between certbot and nginx proxy
-  ansible.builtin.pause:
-    seconds: 10
-
 - name: Set restrictive permissions on private key
   ansible.builtin.file:
     path: /opt/linux_tweet_app/data/certbot/conf/sretest.ddns.net.key
@@ -111,6 +107,10 @@
     path: /opt/linux_tweet_app/data/nginx/default.conf
     regexp: 'ssl_certificate_key\s+.*;'
     replace: 'ssl_certificate_key /etc/letsencrypt/live/sretest.ddns.net/privkey.pem;'
+
+- name: Wait for nfs to sync between certbot and nginx proxy
+  ansible.builtin.pause:
+    seconds: 10
 
 - name: Ensure fullchain exists on host and is non-empty
   ansible.builtin.stat:
