@@ -1,6 +1,6 @@
 upgrade: no
 app_repo: "https://github.com/dockersamples/linux_tweet_app.git"
-app_path: "/opt/linux_tweet_app"
+doc_root: "/opt/linux_tweet_app"
 image_name: "linux_tweet_app:latest"
-container_name: "sre_test_app"
 compose_file: "/opt/linux_tweet_app/docker-compose.yml"
+data_directory: "/opt/linux_tweet_app/data"
