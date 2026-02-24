@@ -13,11 +13,8 @@
 - name: Install common packages
   ansible.builtin.apt:
     name:
-      - curl
       - htop
-      - iotop
       - vim
-      - screen
   when: not ansible_check_mode
 
 - name: Enable colored shell for root
