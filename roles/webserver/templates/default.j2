@@ -1,6 +1,6 @@
 server {
     listen 80;
-    server_name sretest.ddns.net;
+    server_name {{ domain }};
     server_tokens off;
 
     location /.well-known/acme-challenge/ {
@@ -14,11 +14,11 @@ server {
 
 server {
     listen 443 ssl;
-    server_name sretest.ddns.net;
+    server_name {{ domain }};
     server_tokens off;
 
-    ssl_certificate /etc/letsencrypt/sretest.ddns.net.crt;
-    ssl_certificate_key /etc/letsencrypt/sretest.ddns.net.key;
+    ssl_certificate /etc/letsencrypt/{{ domain }}.crt;
+    ssl_certificate_key /etc/letsencrypt/{{ domain }}.key;
 
     location / {
         proxy_pass  http://app:80;
