@@ -32,9 +32,9 @@
     mode: 0755
 
 - name: Copy nginx app config for IP SSL validation
-  ansible.builtin.copy:
-    src: files/default.conf
-    dest: "{{ data_directory }}/nginx/"
+  ansible.builtin.template:
+    src: templates/default.j2
+    dest: "{{ data_directory }}/nginx/default.conf"
     owner: root
     group: root
     mode: 0644
@@ -49,22 +49,22 @@
 
 - name: Generate self-signed localhost certificate for nginx start
   ansible.builtin.shell: |
-    openssl req -x509 -out sretest.ddns.net.crt -keyout sretest.ddns.net.key \
+    openssl req -x509 -out {{ domain }}.crt -keyout {{ domain }}.key \
       -newkey rsa:2048 -nodes -sha256 \
-      -subj '/CN=sretest.ddns.net' \
+      -subj '/CN={{ domain }}' \
       -extensions EXT \
       -config <(
-        printf "[dn]\nCN=sretest.ddns.net\n[req]\ndistinguished_name = dn\n[EXT]\nsubjectAltName=DNS:sretest.ddns.net\nkeyUsage=digitalSignature\nextendedKeyUsage=serverAuth"
+        printf "[dn]\nCN={{ domain }}\n[req]\ndistinguished_name = dn\n[EXT]\nsubjectAltName=DNS:{{ domain }}\nkeyUsage=digitalSignature\nextendedKeyUsage=serverAuth"
       )
   args:
     executable: /bin/bash
     chdir: "{{ data_directory }}/certbot/conf/"
-    creates: "{{ data_directory }}/certbot/conf/sretest.ddns.net.crt"
+    creates: "{{ data_directory }}/certbot/conf/{{ domain }}.crt"
   when: not ansible_check_mode
 
 - name: Set restrictive permissions on private key
   ansible.builtin.file:
-    path: "{{ data_directory }}/certbot/conf/sretest.ddns.net.key"
+    path: "{{ data_directory }}/certbot/conf/{{ domain }}.key"
     mode: "0600"
     owner: root
     group: root
@@ -82,42 +82,52 @@
     - not compose_stat.stat.exists
     - not ansible_check_mode
 
-- name: Start services with docker compose
-  ansible.builtin.shell: >
-    docker compose -f "{{ compose_file }}" up -d
+- name: Check if fullchain exists on host and is non-empty
+  ansible.builtin.stat:
+    path: "{{ data_directory }}/certbot/conf/live/{{ domain }}/fullchain.pem"
+  register: stat_fullchain
+
+- name: Start nginx and app containers
+  command: docker compose -f "{{ compose_file }}" up -d app nginx
+
+- name: Obtain Let's Encrypt certificate
+  command: >
+    docker compose run --rm --entrypoint ""
+    certbot certbot certonly
+    --webroot -w /var/www/certbot
+    -d {{ domain }}
+    --staging
+    --non-interactive
+    --agree-tos
+    --register-unsafely-without-email
   args:
-    executable: /bin/bash
-  when: not ansible_check_mode
+    chdir: "{{ doc_root }}"
+  when: not stat_fullchain.stat.exists
 
 - name: Update nginx config to use Let's Encrypt certificate
   ansible.builtin.replace:
     path: "{{ data_directory }}/nginx/default.conf"
     regexp: 'ssl_certificate\s+.*;'
-    replace: 'ssl_certificate /etc/letsencrypt/live/sretest.ddns.net/fullchain.pem;'
+    replace: 'ssl_certificate /etc/letsencrypt/live/{{ domain }}/fullchain.pem;'
 
 - name: Update nginx config to use Let's Encrypt private key
   ansible.builtin.replace:
     path: "{{ data_directory }}/nginx/default.conf"
     regexp: 'ssl_certificate_key\s+.*;'
-    replace: 'ssl_certificate_key /etc/letsencrypt/live/sretest.ddns.net/privkey.pem;'
+    replace: 'ssl_certificate_key /etc/letsencrypt/live/{{ domain }}/privkey.pem;'
 
 - name: Wait for nfs to sync between certbot and nginx proxy
   ansible.builtin.pause:
     seconds: 5
+  when: not stat_fullchain.stat.exists
 
-- name: Ensure fullchain exists on host and is non-empty
-  ansible.builtin.stat:
-    path: "{{ data_directory }}/certbot/conf/live/sretest.ddns.net/fullchain.pem"
-  register: stat_fullchain
-
-- name: Fail early if fullchain missing or empty
-  ansible.builtin.fail:
-    msg: "fullchain.pem missing or empty - cannot proceed"
-  when: not stat_fullchain.stat.exists or stat_fullchain.stat.size == 0
-
-- name: Reload nginx inside docker compose
+- name: Reload nginx proxy
   ansible.builtin.shell: >
     docker compose -f /opt/linux_tweet_app/docker-compose.yml exec -T nginx nginx -s reload
   args:
     executable: /bin/bash
+    when: not stat_fullchain.stat.exists
+
+- name: Start certbot container for renewal
+  command: docker compose -f "{{ compose_file }}" up -d certbot
     
