@@ -9,5 +9,3 @@ Prerequisites:
 For now the Certbot certificate generation is in staging mode to avoid hitting rate limit with Letsencryt.
 
 Execution: ansible-playbook -i inventory/sretest --private-key ~/.ssh/"some_key.pem" --diff all.yml
-
-<img width="661" height="551" alt="Diagram" src="https://github.com/user-attachments/assets/e6677f33-a20f-4ae3-99d9-8dfa281620cf" />
