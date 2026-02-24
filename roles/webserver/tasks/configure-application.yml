@@ -88,10 +88,10 @@
   register: stat_fullchain
 
 - name: Start nginx and app containers
-  command: docker compose -f "{{ compose_file }}" up -d app nginx
+  ansible.builtin.command: docker compose -f "{{ compose_file }}" up -d app nginx
 
 - name: Obtain Let's Encrypt certificate
-  command: >
+  ansible.builtin.command: >
     docker compose run --rm --entrypoint ""
     certbot certbot certonly
     --webroot -w /var/www/certbot
@@ -126,8 +126,8 @@
     docker compose -f /opt/linux_tweet_app/docker-compose.yml exec -T nginx nginx -s reload
   args:
     executable: /bin/bash
-    when: not stat_fullchain.stat.exists
+  when: not stat_fullchain.stat.exists
 
 - name: Start certbot container for renewal
-  command: docker compose -f "{{ compose_file }}" up -d certbot
+  ansible.builtin.command: docker compose -f "{{ compose_file }}" up -d certbot
     
